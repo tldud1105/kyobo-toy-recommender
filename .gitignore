@@ -1,0 +1,6 @@
+
+#IDE metadata
+.idea/
+
+#venv
+venv/
