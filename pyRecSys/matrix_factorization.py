@@ -12,113 +12,75 @@ class SVD:
         self.df = df
 
     def split_train_test(self):
-        train_df, test_df = train_test_split(self.df, test_size=0.2, random_state=0)
+        train_df, test_df = train_test_split(self.df, test_size=0.2, random_state=1234)
         return train_df, test_df
 
-    def preprocessing(self, train_df):
-
+    def mk_sparse_matrix(self, train_df):
         # make sparse matrix
         sparse_matrix = train_df.groupby('itemId').apply(
             lambda x: pd.Series(x['rating'].values, index=x['userId'])).unstack()
-        sparse_matrix.index.name = 'itemId'
+        return sparse_matrix
 
+    def fill_with_avgItem(self, sparse_matrix):
         # fill sparse matrix with average of item ratings
-        sparse_matrix_withItem = sparse_matrix.apply(lambda x: x.fillna(x.mean()), axis=1)
+        matrix_with_avgItem = sparse_matrix.apply(lambda x: x.fillna(x.mean()), axis=1)
+        return matrix_with_avgItem
 
+    def fill_with_avgUser(self, sparse_matrix):
         # fill sparse matrix with average of user ratings
-        sparse_matrix_withUser = sparse_matrix.apply(lambda x: x.fillna(x.mean()), axis=0)
-        return sparse_matrix_withItem, sparse_matrix_withUser
+        matrix_with_avgUser = sparse_matrix.apply(lambda x: x.fillna(x.mean()), axis=0)
+        return matrix_with_avgUser
 
-    def get_svd(self, s_matrix, k=300):
-
-        # s_matrix : 2D array
-        # u : left singular vector (2D array)
-        # s : singular value of sparse matirx (1D array)
-        # vh : right singular vector (2D array)
-        u, s, vh = np.linalg.svd(s_matrix.transpose())
-        S = s[:k] * np.identity(k, np.float64)
+    def get_svd(self, matrix, k):
+        u, s, vh = np.linalg.svd(matrix)
         T = u[:, :k]
+        S = s[:k] * np.identity(k)
         Dt = vh[:k, :]
-
-        item_factors = np.transpose(np.matmul(S, Dt))
-        user_factors = np.transpose(T)
-
+        item_factors = T
+        user_factors = np.matmul(S, Dt)
         return item_factors, user_factors
 
-    def prediction(self, sparse_matrix_withItem, sparse_matrix_withUser):
+    def prediction(self, k, status):
 
-        # with item
-        item_factors, user_factors = self.get_svd(sparse_matrix_withItem)
-        prediction_withItem = pd.DataFrame(np.matmul(item_factors, user_factors),
-                                                  columns=sparse_matrix_withItem.columns.values,
-                                                  index=sparse_matrix_withItem.index.values)
-        # with user
-        prediction_withItem = prediction_withItem.transpose()
-        item_factors, user_factors = self.get_svd(sparse_matrix_withUser)
-        prediction_withUser = pd.DataFrame(np.matmul(item_factors, user_factors),
-                                                  columns=sparse_matrix_withUser.columns.values,
-                                                  index=sparse_matrix_withUser.index.values)
-        prediction_withUser = prediction_withUser.transpose()
+        train_df, test_df = self.split_train_test()
+        sparse_matrix = self.mk_sparse_matrix(train_df)
 
-        return prediction_withItem, prediction_withUser
+        if status == 'avgItem':
+            matrix_with_avgItem = self.fill_with_avgItem(sparse_matrix)
+            item_factors, user_factors = self.get_svd(matrix_with_avgItem, k)
+            prediction_df = pd.DataFrame(np.matmul(item_factors, user_factors),
+                                         columns=matrix_with_avgItem.columns.values,
+                                         index=matrix_with_avgItem.index.values)
+        elif status == 'avgUser':
+            matrix_with_avgUser = self.fill_with_avgUser(sparse_matrix)
+            item_factors, user_factors = self.get_svd(matrix_with_avgUser, k)
+            prediction_df = pd.DataFrame(np.matmul(item_factors, user_factors),
+                                         columns=matrix_with_avgUser.columns.values,
+                                         index=matrix_with_avgUser.index.values)
 
-    def evaluate(self, test_df, prediction_withItem, prediction_withUser):
-
-        # extract intersection IDs between 'test data' and 'prediction data'
-        groups_with_item_ids = test_df.groupby(by='itemId')
-        groups_with_user_ids = test_df.groupby(by='userId')
-
-        # for item
         intersection_item_ids = sorted(
-            list(set(list(prediction_withItem.columns)).intersection(set(list(groups_with_item_ids.indices.keys())))))
+            list(set(prediction_df.index).intersection(set(test_df['itemId']))))
         intersection_user_ids = sorted(
-            list(set(list(prediction_withItem.index)).intersection(set(groups_with_user_ids.indices.keys()))))
-        compressed_prediction_withItem = prediction_withItem.loc[intersection_user_ids][intersection_item_ids]
-        # for user
-        intersection_item_ids = sorted(
-            list(set(list(prediction_withUser.columns)).intersection(set(list(groups_with_item_ids.indices.keys())))))
-        intersection_user_ids = sorted(
-            list(set(list(prediction_withUser.index)).intersection(set(groups_with_user_ids.indices.keys()))))
-        compressed_prediction_withUser = prediction_withUser.loc[intersection_user_ids][intersection_item_ids]
+            list(set(prediction_df.columns).intersection(set(test_df['userId']))))
+        compressed_prediction_df = prediction_df.loc[intersection_item_ids][
+            intersection_user_ids]
 
-        # calculation RMSE for test data
-        # with item
-        rmse_withItem = pd.DataFrame(columns=['rmse'])
-        print('evaluate for ')
-        for userId, group in tqdm(groups_with_user_ids):
+        transposed_prediction_df = compressed_prediction_df.transpose()
+        final_prediction_df = pd.DataFrame(columns=['userId', 'itemId', 'actual_rating', 'pred_rating'])
+        grouped = test_df.groupby(by='userId')
+        for userId, group in tqdm(grouped):
             if userId in intersection_user_ids:
-                pred_ratings = compressed_prediction_withItem.loc[userId][
-                    compressed_prediction_withItem.loc[userId].index.intersection(list(group['itemId'].values))]
+                pred_ratings = transposed_prediction_df.loc[userId][
+                    transposed_prediction_df.loc[userId].index.intersection(list(group['itemId'].values))]
                 pred_ratings = pred_ratings.to_frame(name='rating').reset_index().rename(
                     columns={'index': 'itemId', 'rating': 'pred_rating'})
                 actual_ratings = group[['rating', 'itemId']].rename(columns={'rating': 'actual_rating'})
+                oneId_df = pd.merge(actual_ratings, pred_ratings, how='inner', on=['itemId'])
+                oneId_df = oneId_df.round(4)
+                oneId_df['userId'] = userId
+                final_prediction_df = pd.concat([final_prediction_df, oneId_df])
 
-                final_withItem = pd.merge(actual_ratings, pred_ratings, how='inner', on=['itemId'])
-                final_withItem = final_withItem.round(4)
-
-                if not final_withItem.empty:
-                    rmse = sqrt(mean_squared_error(final_withItem['actual_rating'], final_withItem['pred_rating']))
-                    rmse_withItem.loc[userId] = rmse
-
-        # calculation RMSE for test data
-        # with user
-        rmse_withUser = pd.DataFrame(columns=['rmse'])
-        for userId, group in tqdm(groups_with_user_ids):
-            if userId in intersection_user_ids:
-                pred_ratings = compressed_prediction_withUser.loc[userId][
-                    compressed_prediction_withUser.loc[userId].index.intersection(list(group['itemId'].values))]
-                pred_ratings = pred_ratings.to_frame(name='rating').reset_index().rename(
-                    columns={'index': 'itemId', 'rating': 'pred_rating'})
-                actual_ratings = group[['rating', 'itemId']].rename(columns={'rating': 'actual_rating'})
-
-                final_withUser = pd.merge(actual_ratings, pred_ratings, how='inner', on=['itemId'])
-                final_withUser = final_withUser.round(4)
-
-                if not final_withUser.empty:
-                    rmse = sqrt(mean_squared_error(final_withUser['actual_rating'], final_withUser['pred_rating']))
-                    rmse_withUser.loc[userId] = rmse
-
-        return final_withItem, final_withUser, rmse_withItem, rmse_withUser
+        return final_prediction_df
 
 
 if __name__ == '__main__':
@@ -126,8 +88,37 @@ if __name__ == '__main__':
     FILE_NAME = 'movielens/ratings.csv'
     df = pd.read_csv(os.path.join(DATA_PATH, FILE_NAME))
     df.columns = ['userId', 'itemId', 'rating', 'timestamp']
+
+    # In case of k=100
+    # 'with average item ratings' vs 'with average user ratings'
+    # You can see that the RMSE of 'with average user ratings' is smaller than that of 'with average item ratings'
+    # It is because we used the movie dataset in our analysis.
+    # Perhaps the personality of the person was more important factor than the characteristics of each movie.
     test = SVD(df)
-    train_df, test_df = test.split_train_test()
-    sparse_matrix_withItem, sparse_matrix_withUser = test.preprocessing(train_df)
-    prediction_withItem, prediction_withUser = test.prediction(sparse_matrix_withItem, sparse_matrix_withUser)
-    _, _, rmse_withItem, rmse_withUser = test.evaluate(test_df, prediction_withItem, prediction_withUser)
+    prediction_avgItem = test.prediction(k=100, status='avgItem')
+    prediction_avgUser = test.prediction(k=100, status='avgUser')
+    print(
+        f"RMSE: {sqrt(mean_squared_error(prediction_avgItem['actual_rating'].values, prediction_avgItem['pred_rating'].values))}")
+    print(
+        f"RMSE: {sqrt(mean_squared_error(prediction_avgUser['actual_rating'].values, prediction_avgUser['pred_rating'].values))}")
+
+    # grid search for k
+    def find_best_k(start_k, stop_k, step_k, status):
+        k_candidates = np.arange(start_k, stop_k, step_k)
+        rmse_df = pd.DataFrame(columns=['rmse'], index=k_candidates)
+        for k in tqdm(k_candidates):
+            test = SVD(df)
+            if status == 'avgItem':
+                prediction_df = test.prediction(k=k, status='avgItem')
+            elif status == 'avgUser':
+                prediction_df = test.prediction(k=k, status='avgUser')
+            rmse = sqrt(
+                mean_squared_error(prediction_df['actual_rating'].values, prediction_df['pred_rating'].values))
+            rmse_df.loc[k]['rmse'] = rmse
+        return rmse_df
+
+    start_k = 1
+    stop_k = 100
+    step_k = 5
+    rmse_df_avgItem = find_best_k(start_k, stop_k, step_k, status='avgItem')
+    rmse_df_avgUser = find_best_k(start_k, stop_k, step_k, status='avgUser')
