@@ -1,4 +1,4 @@
-# kyobo-toy-recommender
+# pyRecSys (Python Reccomender System)
 
 ### Environment : 
 - Python : 3.9.13
