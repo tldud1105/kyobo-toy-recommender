@@ -4,3 +4,9 @@
 
 #venv
 venv/
+
+#data
+data/movielens/ml-25m
+
+#.pyc
+__pycache__/
