@@ -30,25 +30,50 @@ y = ratings['rating']
     y_test
  ) = train_update_test_split(ratings, frac_new_users=0.2)
 
-def execution():
-    # Initial training -- SGD
-    baseline_model = BaselineModel(method='sgd', n_epochs=100, reg=0.05, lr=0.01, verbose=1)
-    baseline_model.fit(X_train, y_train)
 
-    # Update model with new users
-    baseline_model.update_users(X_update, y_update, n_epochs=100, reg=0.05, lr=0.01, verbose=1)
+def execution(method: str = 'sgd'):
+    """
+    Args:
+        method: {str} -- Method to estimate parameters. Can be one of 'sgd' or 'als' (default: {'sgd'})
+    """
+    if method == 'sgd':
+        # Initial training -- SGD
+        baseline_model = BaselineModel(method='sgd', n_epochs=20, reg=0.05, lr=0.01, verbose=1)
+        baseline_model.fit(X_train, y_train)
 
-    # Prediction
-    y_pred = baseline_model.predict(X_test)
-    rmse = mean_squared_error(y_test, y_pred, squared=False)
-    print(f'\nTest RMSE: {rmse:.4f}')
+        # Update model with new users
+        baseline_model.update_users(X_update, y_update, n_epochs=20, reg=0.05, lr=0.01, verbose=1)
 
-    # Get recommendations
-    user = 200
-    items_known = X_train.query("user_id == @user")["item_id"]
-    baseline_model.recommend(user=user, items_known=items_known)
+        # Prediction
+        y_pred = baseline_model.predict(X_test)
+        rmse = mean_squared_error(y_test, y_pred, squared=False)
+        print(f'\nTest RMSE: {rmse:.4f}')
+
+        # Get recommendations
+        user = 200
+        items_known = X_train.query("user_id == @user")["item_id"]
+        baseline_model.recommend(user=user, items_known=items_known)
+    elif method == 'als':
+        # Initial training -- ALS
+        baseline_model = BaselineModel(method='als', n_epochs=200, reg=0.1, verbose=1)
+        baseline_model.fit(X_train, y_train)
+
+        # Update model with new users
+        baseline_model.update_users(X_update, y_update, n_epochs=50, reg=0.1, verbose=1)
+
+        # Prediction
+        y_pred = baseline_model.predict(X_test)
+        rmse = mean_squared_error(y_test, y_pred, squared=False)
+        print(f'\nTest RMSE: {rmse:.4f}')
+
+        # Get recommendations
+        user = 200
+        items_known = X_train.query("user_id == @user")["item_id"]
+        baseline_model.recommend(user=user, items_known=items_known)
+
 
 if __name__ == "__main__":
-    execution()
     start_time = time.time()
-    print("--- %s seconds ---" % (time.time() - start_time))
+    #execution(method='sgd')
+    execution(method='als')
+    print(time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))

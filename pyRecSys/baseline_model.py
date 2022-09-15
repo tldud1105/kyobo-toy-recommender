@@ -187,7 +187,6 @@ class BaselineModel(RecSysBase):
                 n_epochs=n_epochs,
                 reg=reg,
                 verbose=verbose,
-                update_item_params=False,
             )
 
         return
@@ -270,8 +269,6 @@ def _als(
         n_epochs: int,
         reg: float,
         verbose: int,
-        update_user_params: bool = True,
-        update_item_params: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray, list]:
     """
     Performs Alternating Least Squares to estimate the user_biases and item_biases.
@@ -310,28 +307,26 @@ def _als(
     for epoch in range(n_epochs):
 
         # Update user bias parameters
-        if update_user_params:
-            user_biases = np.zeros(n_users)
+        user_biases = np.zeros(n_users)
 
-            # Iterate through all user-item ratings
-            for i in range(X.shape[0]):
-                user_id, item_id, rating = int(X[i, 0]), int(X[i, 1]), X[i, 2]
-                user_biases[user_id] += rating - global_mean - item_biases[item_id]
+        # Iterate through all user-item ratings
+        for i in range(X.shape[0]):
+            user_id, item_id, rating = int(X[i, 0]), int(X[i, 1]), X[i, 2]
+            user_biases[user_id] += rating - global_mean - item_biases[item_id]
 
-            # Set user bias estimation
-            user_biases = user_biases / (reg + user_counts)
+        # Set user bias estimation
+        user_biases = user_biases / (reg + user_counts)
 
         # Update item bias parameters
-        if update_item_params:
-            item_biases = np.zeros(n_items)
+        item_biases = np.zeros(n_items)
 
-            # Iterate through all user-item ratings
-            for i in range(X.shape[0]):
-                user_id, item_id, rating = int(X[i, 0]), int(X[i, 1]), X[i, 2]
-                item_biases[item_id] += rating - global_mean - user_biases[user_id]
+        # Iterate through all user-item ratings
+        for i in range(X.shape[0]):
+            user_id, item_id, rating = int(X[i, 0]), int(X[i, 1]), X[i, 2]
+            item_biases[item_id] += rating - global_mean - user_biases[user_id]
 
-            # Set item bias estimation
-            item_biases = item_biases / (reg + item_counts)
+        # Set item bias estimation
+        item_biases = item_biases / (reg + item_counts)
 
         # Calculate error and print
         rmse = _calculate_rmse(
