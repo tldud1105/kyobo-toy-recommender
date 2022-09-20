@@ -17,7 +17,7 @@ class BaselineModel(RecSysBase):
     These two vectors (u_ubias, i_ibias) are estimated using SGD on the RMSE with regularization.
 
     Args:
-        method: {str} -- Method to estimate parameters. Can be one of 'sgd' or 'als' (default: {'sgd'})
+        method {str} -- Method to estimate parameters. Can be one of 'sgd' or 'als' (default: {'sgd'})
         n_epochs {int} -- Number of epochs to train for (default: {100})
         reg {float} -- Lambda parameter for L2 regularization (default: {1})
         lr {float} -- Learning rate for gradient optimization step (default: {0.01})
@@ -206,7 +206,7 @@ def _sgd(
         update_item_params: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray, list]:
     """
-    Performs Stochastic Gradient Descent to estimate the user_biases and item_biases
+    Performs stochastic gradient descent to estimate parameters.
 
     Args:
         X {numpy array} -- User-item rating matrix
@@ -305,7 +305,6 @@ def _als(
 
     # For each epoch optimize User biases, and then Item biases
     for epoch in range(n_epochs):
-
         # Update user bias parameters
         user_biases = np.zeros(n_users)
 

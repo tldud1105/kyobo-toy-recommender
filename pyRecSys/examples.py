@@ -6,7 +6,7 @@ import time
 import pandas as pd
 
 # Modeling
-from pyRecSys import BaselineModel, train_update_test_split
+from pyRecSys import BaselineModel, KernelMF, train_update_test_split
 from sklearn.metrics import mean_squared_error
 
 # Movie data found here https://grouplens.org/datasets/movielens/
@@ -34,11 +34,11 @@ y = ratings['rating']
 def execution(method: str = 'sgd'):
     """
     Args:
-        method: {str} -- Method to estimate parameters. Can be one of 'sgd' or 'als' (default: {'sgd'})
+        method: {str} -- Method to estimate parameters. Can be one of 'sgd', 'als', 'mf_linear' (default: {'sgd'})
     """
     if method == 'sgd':
         # Initial training -- SGD
-        baseline_model = BaselineModel(method='sgd', n_epochs=20, reg=0.05, lr=0.01, verbose=1)
+        baseline_model = BaselineModel(method='sgd', n_epochs=50, reg=0.05, lr=0.01, verbose=1)
         baseline_model.fit(X_train, y_train)
 
         # Update model with new users
@@ -52,7 +52,7 @@ def execution(method: str = 'sgd'):
         # Get recommendations
         user = 200
         items_known = X_train.query("user_id == @user")["item_id"]
-        baseline_model.recommend(user=user, items_known=items_known)
+        print(baseline_model.recommend(user=user, items_known=items_known))
     elif method == 'als':
         # Initial training -- ALS
         baseline_model = BaselineModel(method='als', n_epochs=200, reg=0.1, verbose=1)
@@ -69,11 +69,43 @@ def execution(method: str = 'sgd'):
         # Get recommendations
         user = 200
         items_known = X_train.query("user_id == @user")["item_id"]
-        baseline_model.recommend(user=user, items_known=items_known)
+        print(baseline_model.recommend(user=user, items_known=items_known))
+    elif method == 'mf_linear':
+        # Initial training
+        mf_linear_model = KernelMF(n_epochs=20, n_factors=100, verbose=1, lr=0.001, reg=0.005)
+        mf_linear_model.fit(X_train, y_train)
+
+        # Update model with new users
+        mf_linear_model.update_users(X_update, y_update, lr=0.001, n_epochs=20, verbose=1)
+        y_pred = mf_linear_model.predict(X_test)
+        rmse = mean_squared_error(y_test, y_pred, squared=False)
+        print(f"\nTest RMSE: {rmse:.4f}")
+
+        # Get recommendations
+        user = 200
+        items_known = X_train.query("user_id == @user")["item_id"]
+        print(mf_linear_model.recommend(user=user, items_known=items_known))
+    elif method == 'mf_sigmoid':
+        # Initial training
+        mf_sigmoid_model = KernelMF(n_epochs=30, n_factors=100, kernel='sigmoid', verbose=1, lr=0.01, reg=0.05)
+        mf_sigmoid_model.fit(X_train, y_train)
+
+        # Update model with new users
+        mf_sigmoid_model.update_users(X_update, y_update, lr=0.001, n_epochs=20, verbose=1)
+        y_pred = mf_sigmoid_model.predict(X_test)
+        rmse = mean_squared_error(y_test, y_pred, squared=False)
+        print(f"\nTest RMSE: {rmse:.4f}")
+
+        # Get recommendations
+        user = 200
+        items_known = X_train.query("user_id == @user")["item_id"]
+        print(mf_sigmoid_model.recommend(user=user, items_known=items_known))
 
 
 if __name__ == "__main__":
     start_time = time.time()
     #execution(method='sgd')
-    execution(method='als')
+    #execution(method='als')
+    execution(method='mf_linear')
+    #execution(method='mf_sigmoid')
     print(time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
