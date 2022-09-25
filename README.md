@@ -1,4 +1,4 @@
-# pyRecSys (Python Reccomender System)
+# pyRecSys (Python Recommender System)
 
 ### Environment : 
 - Python : 3.9.13
